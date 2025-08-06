@@ -1,10 +1,7 @@
 module SimplePIC
 
-# include("MonteCarloCollisions.jl")
-# using .MonteCarloCollisions
+using MonteCarloCollisions
 
-include("Particles.jl")
-# import Interpolations as itp
 using Plots
 using FFTW
 using Random
@@ -20,8 +17,8 @@ const m_p = 1.6726219e-27
 export m_e, q_e, amu, k_B
 export NeutralEnsemble, ParticleEnsemble, Particle1d3v, Particle3d3v, Particle0d3v, Particle1d3vE, Particle1d1vE
 export Cartesian1D, CylindricalR, BCDirichlet1D, BCPeriodic1D
-export Neutrals, Particles, AbstractParticle #, Interaction, Interactions, add_interaction!
-# export load_interaction_lxcat, load_interactions_lxcat, svmax_find!, init_rates!, make_interactions
+export Neutrals, Particles, AbstractParticle, Interaction, Interactions, add_interaction!
+export load_interaction_lxcat, load_interactions_lxcat, svmax_find!, init_rates!, make_interactions
 export init_time, init_monoenergetic, init_thermal
 export advance, advance!, energy, scatter
 
@@ -90,7 +87,7 @@ end
 mutable struct PIC{dim, ParticleType, GeometryType, BCType, vdim} 
     #where ParticleType <: AbstractParticle where FieldType <: AbstractField where BCType <: BoundaryCondition
     particles::Vector{ParticleEnsemble{ParticleType}}
-    # interactions::Vector{Interactions{ParticleEnsemble{ParticleType}}}
+    interactions::Vector{Interactions{ParticleEnsemble{ParticleType}}}
     nx::Int64
     xmax::Float64
     dx::Float64
@@ -106,10 +103,10 @@ mutable struct PIC{dim, ParticleType, GeometryType, BCType, vdim}
     epsilon_0::Float64
 end
 
-function PIC(particles::Vector{ParticleEnsemble{ParticleType}},#  interactions::Vector{Interactions{ParticleEnsemble{ParticleType}}},
+function PIC(particles::Vector{ParticleEnsemble{ParticleType}}, interactions::Vector{Interactions{ParticleEnsemble{ParticleType}}},
     geo::AbstractGeometry, BC::BCType, epsilon_0::Float64, vdim::Int64) where ParticleType where BCType <: BoundaryCondition
     PIC{1, ParticleType, Cartesian1D, BCType, vdim}(particles,
-        #interactions,
+        interactions,
         geo.nx, 
         geo.xmax, 
         geo.dx, 
@@ -149,6 +146,21 @@ end
 function interpolate_linear(particles::ParticleEnsemble, dx::Float64, E::Vector{Float64})
     for p in particles.coords
         p.E = SVector(interpolate_linear(p.r[1], dx, E), 0, 0)
+    end
+end
+
+
+function advance(particles::ParticleEnsemble, interactions::Interactions, dt::Float64)
+    qmdt = particles.q/particles.m*dt
+    Pcoll = -expm1( -interactions.rate*dt)
+    #println(particles.name, " Pcoll ", Pcoll)
+    for p in particles.coords
+        p.v += p.E * qmdt
+        p.r += SVector(p.v[1]*dt)
+
+        if rand() < Pcoll
+                p.v = MonteCarloCollisions.scatter(p.v, particles.m , interactions)
+        end
     end
 end
 
@@ -245,8 +257,8 @@ function particle_bc(pic::PIC)
 end    
 
 function advance(pic::PIC, dt::Float64)
-    for p in pic.particles
-        advance(p, dt)
+    for (p, inter) in zip(pic.particles, pic.interactions)
+        advance(p, inter, dt)
         particle_bc(p, pic.xmax, pic.BC)
     end
 end

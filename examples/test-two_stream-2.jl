@@ -63,13 +63,16 @@ for i in 1:N
 end
 
 
+e1_interactions = make_interactions(electrons1, Interaction[]);
+e2_interactions = make_interactions(electrons2, Interaction[]);
 
 particles = [electrons1, electrons2]
+interactions = [e1_interactions, e2_interactions]
 
 geometry = Cartesian1D(nx, xmax, xmax/(nx-1), dV)
 BC = BCPeriodic1D()
 
-pic = PIC(particles, geometry, BC, EPS, 1)
+pic = PIC(particles, interactions, geometry, BC, EPS, 1)
 #pic.rhobg = 0 #ne*e/(nx-1)/dV
 pic.rhobg = 2*N*Q/(nx-1)/dV
 
@@ -113,7 +116,6 @@ end
 
 pic_sim(pic, probes, dt, ntmax)
 
-#@profview pic_sim(pic, probes, dt, ntmax)
 
 using Plots
 
