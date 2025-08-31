@@ -2,17 +2,17 @@ using StaticArrays
 using Random
 using Printf
 
-using SimplePIC
-
-plotdir = "./plots-1D_diffusion/"
-sampling_period = 5
-mkpath(plotdir)
+if !isdefined(Main, :DirichletPIC)
+    include("DirichletPIC.jl")
+    using .DirichletPIC
+end
 
 Random.seed!(1234)
 
 ne = 200000
 nx = 201
 xmax = 0.01
+dx = xmax/(nx-1)
 nv = 151
 vmax = 2000.
 dt = 5e-9
@@ -21,9 +21,36 @@ tmax = 5e-6
 ntmax = Int64(ceil(tmax/dt))
 exc = 0.01
 
+# EXTERNAL CIRCUIT CONDITIONS 2
+C = 5e-08
+L = 1e-07
+R = 5
+Q0 = 0
+QL = 0
+QR = 0
+J12 = 0
+J32 = 0
+Js = []
+deltaleft = 0
+deltaright = 0
+
+function Voltage(t::Float64)
+    return 1e-05*sin(t/tmax)
+end
+
 electrons = ParticleEnsemble("electrons", m_e, -q_e, ne, Particle1d3vE)
 argonplus = ParticleEnsemble("argonplus", 40*amu*0.1, q_e, ne, Particle1d3vE)
 argon = NeutralEnsemble("argon", 10., 40*amu*0.1, 1e19);
+
+T_inject = 300.0
+A = dV/dx
+vth_e = sqrt(8*k_B*T_inject/(pi*electrons.m))
+vth_p = sqrt(8*k_B*T_inject/(pi*argonplus.m))
+#inject_density = ne/(A*xmax)
+inject_density = 5e10
+ne_inject = 1/4*A*inject_density*vth_e*dt
+np_inject = 1/4*A*inject_density*vth_p*dt
+
 
 electron_interaction_list = load_interactions_lxcat("data/CS_e_Ar_Phelps.txt", electrons, argon);
 argon_interaction_list = load_interactions_lxcat("data/CS_Arp_Ar_Phelps.txt", electrons, argon);
@@ -46,8 +73,9 @@ particles = [electrons, argonplus]
 interactions = [electron_interactions, argonplus_interactions]
 
 geometry = Cartesian1D(nx, xmax, xmax/(nx-1), dV)
-BC = BCDirichlet1D([-1e-9,1e-9])
-pic = PIC(particles, interactions, geometry, BC, epsilon_0, 3)
+BC = BCDirichlet1D([-1e-09, 1e-09])
+pic = PIC(particles, interactions, geometry, BC, epsilon_0, 3) #particles, interactions, geometry, BC = Boundary condition, epsilon_0, vdim
+obvod = Circuit(R, L, C, Q0, Js, Voltage)
 pic.rhobg = 0 #ne*e/(nx-1)/dV
 
 probes = Dict(
@@ -58,6 +86,12 @@ probes = Dict(
     :nvx_probe => NvxProbe(2e5, 100, 1),
     :E_probe => EProbe(pic.geo),
     :PSx_probe => PSxProbe(2e5, 100, pic.geo, 1),
+    :B_probe => BProbe(pic.geo),
+    :T_probe => TProbe(dt, pic.geo, 1),
+    :QL_probe => QLProbe(),
+    :QR_probe => QRProbe(),
+    :J_probe => JProbe(),
+    :Q_probe => QProbe()
     )
 
 lu = solve_init(pic.geo, pic.BC)
@@ -67,33 +101,61 @@ function pic_sim(pic, probes, dt, ntmax)
     init_leapfrog(pic, dt)
     for nt in 1:ntmax
         sample(pic)
+        advance_current(pic, dt)
+        advance_external(pic, obvod, nt * dt, dt)
+        poisson_solve(pic)
+        maxwell_solve(pic, dt)
+        interpolate(pic)
+        advance_v_all(pic, dt) #Boris
+        if nt % 5 == 1
+            println(nt, " ", length(electrons.coords), " ", rand(Poisson(ne_inject)))
+            for (key, probe) in probes
+                if probe isa QProbe || probe isa JProbe
+                    sample!(probe, obvod, nt*dt)
+                else
+                    sample!(probe, pic, nt*dt)
+                end
+            end
+        end
+    end
+end
+
+#=
+function pic_sim(pic, probes, dt, ntmax)
+    particle_bc(pic)
+    init_leapfrog(pic, dt, 0.0)
+    for nt in 1:ntmax
+        sample(pic)
+
         poisson_solve(pic, lu)
         interpolate(pic)
         advance(pic, dt)
-        
+
+        inject(electrons, rand(Poisson(ne_inject)), T_inject, xmax, nt*dt, dt)
+        inject(argonplus, rand(Poisson(np_inject)), T_inject, xmax, nt*dt, dt)
+
         if nt % 5 == 1
-            println(nt, " ", length(electrons.coords))
+            println(nt, " ", length(electrons.coords), " ", rand(Poisson(ne_inject)))
             for (key, probe) in probes
                 sample!(probe, pic, nt*dt)
             end
         end
-        
     end
 end
+=#
+
+# pic_sim(pic, probes, dt, ntmax)
 
 pic_sim(pic, probes, dt, ntmax)
 
-# @profview pic_sim(pic, probes, dt, ntmax)
-
 using Plots
 
+Folder = "Figures/"
 
 for (key, probe) in probes
-    probeplt = SimplePIC.plt(probe)
-    savefig(probeplt, plotdir*"plot_"*string(key)*".png")
+    probeplt = DirichletPIC.plt(probe)
+    savefig(probeplt, joinpath(Folder, "plot_"*string(key)*".png"))
 end
-
-using Plots
 
 probe = probes[:nx_probe1]
 nsampl = length(probe.Nx) ÷ 10
@@ -106,7 +168,7 @@ plt = plot(x, n1)
 plt = plot!(x, n2)
 plt = plot!(x, n2 .- n1)
 
-savefig(plt, plotdir*"plot_nxcut.png")
+savefig(plt, joinpath(Folder, "plot_nxcut.png"))
 
 probe = probes[:nx_probe1]
 x = LinRange(probe.xrange..., probe.nx)
@@ -116,26 +178,26 @@ probe = probes[:nx_probe2]
 x = LinRange(probe.xrange..., probe.nx)
 plt = plot!(probe.ts, map(sum, probe.Nx))
 
-savefig(plt, plotdir*"plot_nsum.png")
+savefig(plt, joinpath(Folder, "plot_nsum.png"))
 
 
 probe1 = probes[:nx_probe1]
 probe2 = probes[:nx_probe2]
 Uprobe = probes[:U_probe]
 x = LinRange(probe1.xrange..., probe1.nx)
-println("animating nxcut")
 anim = @animate for i in 1:(length(probe.Nx)-nsampl)
+    println("anim ", i)
     n1 = sum(probe1.Nx[i:i+nsampl])./nsampl
     n2 = sum(probe2.Nx[i:i+nsampl])./nsampl
     U = sum(Uprobe.Us[i:i+nsampl])./nsampl
     plt1 = plot(x, n1,
         label=@sprintf("t = %.1f ns", probe1.ts[i]*1e9),
-        legend=:topright,
+        legend=:topleft,
         ylabel="rho (a.u.)"
         )
     plt2 = plot(x, U,
         label=@sprintf("t = %.1f ns", probe1.ts[i]*1e9),
-        legend=:topright,
+        legend=:topleft,
         ylabel="U (V)",
         xlabel="x (m)"
         )
@@ -143,4 +205,4 @@ anim = @animate for i in 1:(length(probe.Nx)-nsampl)
     plot!(plt1, x, n2 .- n1, label="")
     plot(plt1, plt2, layout = grid(2, 1, heights=[0.5 ,0.5]))
 end
-gif(anim, plotdir*"plot_nxcut_anim.gif", fps = 15)
+gif(anim, joinpath(Folder, "plot_nxcut_anim.gif"), fps = 15)
