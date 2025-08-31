@@ -14,6 +14,25 @@
     rho[xl+2] += w
 end
 
+#= @inline function sample_linear!(rho::Vector{Float64}, vsum::Vector{SVector{3, Float64}}, weight::SVector{3, Float64}, x::Float64, nx::Int64, dx::Float64)
+    xi = x/dx
+    xl = floor(Int64, xi)
+    w = xi-xl
+    #=
+    if xl <= -1
+        println("sample err ", x, " ", xi, " ", xl)
+    end
+    if xl >= nx-1
+        println("sample max err ", x, " ", xi, " ", xl)
+    end
+    =#
+    rho[xl+1] += 1-w
+    rho[xl+2] += w
+    vsum[xl+1] += (1-w)*weight
+    vsum[xl+2] += w*weight
+end =#
+
+
 @inline function sample_linear!(rho::Vector{Float64}, x::SVector{1, Float64}, nx::Int64, dx::Float64)
     sample_linear!(rho, x[1], nx, dx)
 end
@@ -25,6 +44,15 @@ function sample_linear(x::Vector{Float64}, nx::Int64, dx::Float64)
     end
     return rho
 end
+
+#=function sample_linear(p::ParticleEnsemble{P}, nx::Int64, dx::Float64) where P <: Union{Particle1d3v, Particle1d3vE, Particle1d1vE}
+    rho = zeros(nx)
+    vsum = [zeros(SVector{3, Float64}) for i in 1:nx]
+    for x in p.coords
+        sample_linear!(rho, vsum, x.r[1], x.v, nx, dx)
+    end
+    return rho, vsum
+end=#
 
 function sample_linear(p::ParticleEnsemble{P}, nx::Int64, dx::Float64) where P <: Union{Particle1d3v, Particle1d3vE, Particle1d1vE}
     rho = zeros(nx)

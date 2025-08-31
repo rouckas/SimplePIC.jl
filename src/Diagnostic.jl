@@ -1,3 +1,4 @@
+using StaticArrays
 
 abstract type AbstractProbe end
 
@@ -222,7 +223,164 @@ function plt(probe::PSxProbe)
             title="Nvx", titlefont=font(10), c=:bwr, clim=(-lim, lim))
 end
 
+#***** TEMPERATURE PROBE *****
 
+struct TProbe <: AbstractProbe
+    xrange::Tuple{Float64, Float64}
+    nx::Int64
+    dx::Float64
+    ensemble_id::Int64
+    dt::Float64
+    ts::Vector{Float64}
+    T::Vector{Vector{Float64}}
+end
+
+TProbe(dt::Float64, geo::Cartesian1D, ensemble_id::Int64) = TProbe((0, geo.xmax), geo.nx, geo.xmax/(geo.nx-1), ensemble_id, dt, [], [])
+
+function sample!(probe::TProbe, pic::PIC, t::Float64)
+    particles = pic.particles[probe.ensemble_id]
+    qmdt = particles.q/particles.m*probe.dt/2
+    push!(probe.ts, t)
+    Tgrid = zeros(probe.nx)
+    vels = [SVector{3, Float64}[] for i in 1:probe.nx]
+    for p in particles.coords
+        bin = floor(Int64, p.r[1]/probe.dx) + 1
+        push!(vels[bin], p.v + p.E*qmdt)
+    end
+    for i in 1:probe.nx
+        if !isempty(vels[i])
+            vmean2 = sum(norm(v)^2 for v in vels[i]) / length(vels[i])
+            vmean = sum(vels[i]) / length(vels[i])
+            diff = vmean2 - dot(vmean, vmean)
+            Tgrid[i] = particles.m/(3*k_B)*diff
+        else
+        Tgrid[i] = 0.0
+        end
+    end
+    push!(probe.T, Tgrid)
+end
+
+#=function sample!(probe::TProbe, pic::PIC, t::Float64)
+    particles = pic.particles[probe.ensemble_id]
+    qmdt = particles.q/particles.m*probe.dt/2
+    push!(probe.ts, t)
+    Tgrid = zeros(probe.nx)
+    vels = [SVector{3, Float64}[] for i in 1:probe.nx]
+    rho, vels = sample_linear
+end=#
+
+function plt(probe::TProbe)
+    array = stack(probe.T)
+    x = LinRange(probe.xrange..., probe.nx)
+    y = probe.ts
+    lim = maximum(abs.(array))
+    heatmap(y, x, array, yflip = true, legend=false, 
+            title="Temperature", titlefont=font(10), c=:thermal, clim=(0, lim))
+end
+
+#***** MAGNETIC FIELD PROBE *****
+
+struct BProbe <: AbstractProbe
+    xrange::Tuple{Float64, Float64}
+    ts::Vector{Float64}
+    Bs::Vector{Vector{Float64}}
+end
+
+BProbe(geo::Cartesian1D) = BProbe((0, geo.xmax), [], [])
+
+function sample!(probe::BProbe, pic::PIC, t::Float64)
+    push!(probe.ts, t)
+    push!(probe.Bs, map(b -> b[3], pic.B))
+end
+
+function plt(probe::BProbe)
+    array = stack(probe.Bs)
+    x = LinRange(probe.xrange..., length(probe.Bs[1]))
+    y = probe.ts
+    lim = maximum(abs.(array))
+    heatmap(y, x, array, yflip = true, legend=false, 
+            title="B", titlefont=font(10), c=:bwr, clim=(-lim, lim))
+end
+
+#***** LEFT BOUNDARY CHARGE PROBE *****
+
+struct QLProbe <: AbstractProbe
+    ts::Vector{Float64}
+    Qs::Vector{Float64}
+end
+
+QLProbe() = QLProbe([], [])
+
+function sample!(probe::QLProbe, pic::PIC, t::Float64)
+    push!(probe.ts, t)
+    push!(probe.Qs, pic.QL)
+end
+
+function plt(probe::QLProbe)
+    x = probe.ts
+    y = probe.Qs
+    plot(x, y)
+end
+
+#***** RIGHT BOUNDARY CHARGE PROBE *****
+
+struct QRProbe <: AbstractProbe
+    ts::Vector{Float64}
+    Qs::Vector{Float64}
+end
+
+QRProbe() = QRProbe([], [])
+
+function sample!(probe::QRProbe, pic::PIC, t::Float64)
+    push!(probe.ts, t)
+    push!(probe.Qs, pic.QR)
+end
+
+function plt(probe::QRProbe)
+    x = probe.ts
+    y = probe.Qs
+    plot(x, y)
+end
+
+#***** EXTERNAL CURRENT PROBE *****
+
+struct JProbe <: AbstractProbe
+    ts::Vector{Float64}
+    Js::Vector{Float64}
+end
+
+JProbe() = JProbe([], [])
+
+function sample!(probe::JProbe, obvod::Circuit, t::Float64)
+    push!(probe.ts, t)
+    push!(probe.Js, obvod.Js[end])
+end
+
+function plt(probe::JProbe)
+    x = probe.ts
+    y = probe.Js
+    plot(x, y)
+end
+
+#***** CAPACITOR CHARGE PROBE *****
+
+struct QProbe <: AbstractProbe
+    ts::Vector{Float64}
+    Qs::Vector{Float64}
+end
+
+QProbe() = QProbe([], [])
+
+function sample!(probe::QProbe, obvod::Circuit, t::Float64)
+    push!(probe.ts, t)
+    push!(probe.Qs, obvod.Q)
+end
+
+function plt(probe::QProbe)
+    x = probe.ts
+    y = probe.Qs
+    plot(x, y)
+end
 
 mutable struct Diagnostic
     nt::Int64
