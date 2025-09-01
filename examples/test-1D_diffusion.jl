@@ -9,15 +9,16 @@ end
 
 Random.seed!(1234)
 
+c_speed = 299792458.0
+tmax = 5e-7
+dt = 5e-10
 ne = 200000
 nx = 201
-xmax = 0.01
-dx = xmax/(nx-1)
+dx = c_speed*dt
+xmax = (ne-1)*dx
 nv = 151
 vmax = 2000.
-dt = 5e-9
 dV = 1e-10
-tmax = 5e-6
 ntmax = Int64(ceil(tmax/dt))
 exc = 0.01
 
