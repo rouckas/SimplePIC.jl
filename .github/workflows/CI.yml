@@ -36,14 +36,6 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - run: |
-          julia -e '
-            import Pkg;
-            Pkg.activate(".");  # Activate the project environment
-            # https://discourse.julialang.org/t/codecov-io-and-using-packages-not-in-the-general-registry/118488/2
-            Pkg.rm("MonteCarloCollisions");  # Remove any existing installation
-            Pkg.add(url="https://github.com/rouckas/MonteCarloCollisions.jl");  # Add the unregistered package
-          '
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
