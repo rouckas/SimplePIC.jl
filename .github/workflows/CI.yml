@@ -25,7 +25,7 @@ jobs:
         version:
           - '1.11'
           - '1.6'
-          # - 'pre' # temporarily disable until MonteCarloCollisions becomes registered package
+          - 'pre' # temporarily disable until MonteCarloCollisions becomes registered package
         os:
           - ubuntu-latest
         arch:
