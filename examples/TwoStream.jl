@@ -6,7 +6,7 @@ using FFTW
 # include("DirichletPIC.jl")
 using SimplePIC
 
-plotdir = "./plots-two_stream/"
+plotdir = "./plots-TwoStream/"
 sampling_period = 5
 mkpath(plotdir)
 

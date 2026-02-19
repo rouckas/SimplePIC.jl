@@ -4,7 +4,7 @@ using Printf
 
 using SimplePIC
 
-plotdir = "./plots-1D_diffusion/"
+plotdir = "./plots-Diffusion/"
 sampling_period = 5
 mkpath(plotdir)
 
