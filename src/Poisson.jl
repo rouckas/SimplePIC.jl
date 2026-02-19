@@ -16,6 +16,12 @@ function differentiate!(E::Vector{SVector{1, Float64}}, U::Vector{Float64}, geo:
     E[end] = SVector(E[1])
 end
 
+function differentiate!(E::Vector{SVector{3, Float64}}, U::Vector{Float64}, geo::Cartesian1D, BC::BCPeriodic1D)
+    @views E[2:end-1] .= map(u -> SVector(u, 0., 0.), U[3:end].-U[1:end-2])./(2*geo.dx)
+    E[1] = SVector((U[2]-U[end-1])/(2*geo.dx), 0., 0.) # XXX this is not general, only for 1D
+    E[end] = E[1]
+end
+
 function differentiate!(E::Vector{Float64}, U::Vector{Float64}, geo::Cartesian1D, BC::BCPeriodic1D)
     @views E[2:end-1] .= (U[3:end].-U[1:end-2])./(2*geo.dx)
     E[1] = (U[2]-U[end-1])/(2*geo.dx)

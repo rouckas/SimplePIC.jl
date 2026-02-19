@@ -8,6 +8,7 @@ using Random
 using Distributions
 using StatsBase
 using StaticArrays
+using Accessors
 
 
 
@@ -188,9 +189,14 @@ end
     end
 end
 
+@inline function particle_bc_periodic(x::SVector, xmax::Float64)
+    @set x[1] = particle_bc_periodic(x[1], xmax)
+end
+
+
 function particle_bc(particles::ParticleEnsemble, xmax::Float64, BC::BCPeriodic1D)
     for p in particles.coords
-        p.r = particle_bc_periodic.(p.r, xmax)
+        p.r = particle_bc_periodic(p.r, xmax)
     end
 end
 
