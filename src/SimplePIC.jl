@@ -9,12 +9,9 @@ using Distributions
 using StatsBase
 using StaticArrays
 
-const epsilon_0 = 8.8541878128e-12
-const e = 1.60217662e-19
-const m_e = 9.10938356e-31
-const m_p = 1.6726219e-27
 
-export m_e, q_e, amu, k_B
+
+export m_e, q_e, q_0, amu, k_B, epsilon_0
 export NeutralEnsemble, ParticleEnsemble, Particle1d3v, Particle3d3v, Particle0d3v, Particle1d3vE, Particle1d1vE
 export Cartesian1D, CylindricalR, BCDirichlet1D, BCPeriodic1D
 export Neutrals, Particles, AbstractParticle, Interaction, Interactions, add_interaction!
@@ -274,5 +271,5 @@ function init_leapfrog(pic::PIC, dt::Float64)
 end
 
 include("Diagnostic.jl")
-
+include("Constants.jl")
 end
