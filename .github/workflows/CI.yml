@@ -23,8 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.11'
-          - '1.6'
+          - '1.12'
+          - '1.10'
           - 'pre' # temporarily disable until MonteCarloCollisions becomes registered package
         os:
           - ubuntu-latest
