@@ -147,13 +147,29 @@ function interpolate_linear(particles::ParticleEnsemble, dx::Float64, E::Vector{
     end
 end
 
+@inline function advance_boris(v, Eqm, Bqm, dt)
+    v_minus = v + Eqm * dt/2
 
-function advance(particles::ParticleEnsemble, interactions::Interactions, dt::Float64)
-    qmdt = particles.q/particles.m*dt
+    T = Bqm * dt/2
+    S = T * 2/ (1. + dot(T, T))
+
+    v_prime = v_minus + cross(v_minus, T)
+
+    v_minus + cross(v_prime, S) + Eqm * dt/2
+end
+
+function advance(particles::ParticleEnsemble, interactions::Interactions, dt::Float64, B = 0.)
+    qm = particles.q/particles.m
     Pcoll = -expm1( -interactions.rate*dt)
     #println(particles.name, " Pcoll ", Pcoll)
+    B2 = sum(B.^2)
     for p in particles.coords
-        p.v += p.E * qmdt
+        if B2 > 0
+            p.v = advance_boris(p.v, p.E.*qm, B.*qm, dt)
+        else
+            p.v += p.E * qm*dt
+        end
+
         p.r += SVector(p.v[1]*dt)
 
         if rand() < Pcoll
@@ -259,9 +275,9 @@ function particle_bc(pic::PIC)
     end
 end    
 
-function advance(pic::PIC, dt::Float64)
+function advance(pic::PIC, dt::Float64, B=SVector(0., 0., 0.))
     for (p, inter) in zip(pic.particles, pic.interactions)
-        advance(p, inter, dt)
+        advance(p, inter, dt, B)
         particle_bc(p, pic.xmax, pic.BC)
     end
 end

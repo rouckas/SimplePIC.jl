@@ -1,14 +1,15 @@
 using SimplePIC
 using StaticArrays
 using Printf
-using Plots
+using LinearAlgebra
 using LaTeXStrings
+using Plots
 
-plotdir = "./plots-Oscillations/"
+plotdir = "./plots-HybridOscillations/"
 sampling_period = 5
 mkpath(plotdir)
 
-vdim = 1
+vdim = 3
 
 ne = 100000
 nx = 401
@@ -21,16 +22,16 @@ tmax = 0.07
 ntmax = Int64(ceil(tmax/dt))
 exc = 10
 
-numden = ne/(nx-1)/dV
-omega_p = sqrt(q_e^2 * numden /(epsilon_0*m_e))
+B = SVector(0, 0, 1E-9)
+
 
 # electrons = Particles(ne, -e, m_e)
-electrons = ParticleEnsemble("electrons", m_e, q_e, ne, Particle1d1vE)
+electrons = ParticleEnsemble("electrons", m_e, q_e, ne, Particle1d3vE)
 
 for i in 1:ne
     c = electrons.coords[i]
     c.r = SVector((i-1)*xmax/ne)
-    c.v = SVector(exc*sin(c.r[1]/xmax*2*pi)) #+ 0.0000001*rand(Normal(0, 1e-3), ne)
+    c.v = SVector(exc*sin(c.r[1]/xmax*2*pi), 0, 0) #+ 0.0000001*rand(Normal(0, 1e-3), ne)
 end
 #electrons.x += exc*map(sin, electrons.x/xmax*2*pi) #+ 0.0000001*rand(Normal(0, 1e-3), ne)
 particles = [electrons]
@@ -42,6 +43,16 @@ BC = BCPeriodic1D()
 pic = PIC(particles, interactions, geometry, BC, epsilon_0, vdim)
 # pic = PIC(particles, nx, xmax, dV, epsilon_0)
 pic.rhobg = ne*q_0/(nx-1)/dV
+
+numden = ne/(nx-1)/dV
+omega_p = sqrt(q_e^2 * numden /(epsilon_0*m_e))
+omega_c = abs(q_e)*norm(B)/m_e
+# omega_c = q_e*sqrt(sum(B.^2))/m_e
+omega_H = sqrt(omega_c^2 + omega_p^2)
+@show omega_c
+@show omega_p
+@show omega_H
+
 
 probes = Dict(
     :energy_probe => EnergyProbe(dt, 1),
@@ -62,7 +73,7 @@ function pic_sim(pic, probes, dt, ntmax)
         sample(pic)
         poisson_solve(pic)
         interpolate(pic)
-        advance(pic, dt)
+        advance(pic, dt, B)
         
 
         if nt % sampling_period == 0
@@ -84,9 +95,9 @@ for (key, probe) in probes
 end
 
 E_kin = probes[:energy_probe].Ekin
-time = probes[:energy_probe].ts
 E_pot = probes[:energy_probe].Epot
 E_tot = E_kin + E_pot
+time = probes[:energy_probe].ts
 Emax = maximum(E_tot)
 Escale = 1e25
 
@@ -94,23 +105,19 @@ vx = LinRange(probes[:nvx_probe].vxrange..., probes[:nvx_probe].nvx)
 
 nsampl = length(probes[:rho_probe].rhos)
 anim = @animate for t in 1:nsampl
-    p1 = plot((probes[:rho_probe].rhos[t] .- pic.rhobg).*-1e18,
-     fill=true, ylims = (0, 1.5), label="rho(x)")
+    p1 = plot((probes[:rho_probe].rhos[t] .- pic.rhobg).*-1e18, fill=true, ylims = (0, 1.5), label="rho(x)")
     p2 = plot(vx, probes[:nvx_probe].Nvx[t]./q_0, fill=true,
       ylims = (0, maximum(probes[:nvx_probe].Nvx[1])*2/q_0), 
       label="rho(v)")
     p3 = plot(E_kin[1:t]*Escale, xlims=(0, nsampl), ylims=(0, Emax*Escale), label="kinetic")
     p3 = plot!(E_pot[1:t]*Escale, xlims=(0, nsampl), label="potential")
     p3 = plot!(E_tot[1:t]*Escale, xlims=(0, nsampl), label="total")
-    p3 = plot!(E_kin[1]*Escale*cos.(omega_p*time[1:nsampl]).^2,
-     label=L"\cos^2(\omega_p t)", ls=:dot)
-    # the energy oscillates at double plasma frequency,
-    # as it is a square of velocity / displacement
+    p3 = plot!(0.5*E_kin[1]*Escale*(cos.(omega_H*time[1:nsampl]) .+ 1), label="cos(omega_H t)")
+
     plot(p1, p2, p3, layout=(3,1))
 end
 
 gif(anim, plotdir*"plot_nxcut_anim.gif", fps = 20)
-
 
 probe = probes[:PSx_probe]
 x = LinRange(probe.xrange..., probe.nx)
@@ -120,7 +127,7 @@ anim = @animate for i in 1:(length(probe.ts))
     y = LinRange(probe.vxrange..., probe.nvx)
     array = probe.PSx[i] #.- probe2.PSx[i]
     lim = maximum(abs.(array))
-    heatmap(x, y, array', yflip = false,
+    heatmap(x, y, array', yflip = false, 
             titlefont=font(10), c=:bwr, clim=(-lim, lim),
             title=@sprintf("PSx t = %.1f s", probe.ts[i]),
             legend=:topright,
@@ -130,6 +137,7 @@ gif(anim, plotdir*"plot_PSx_anim.gif", fps = 15)
 
 
 include("PlotPsAnim.jl")
+
 function animate_PS_energy(PS_probe, energy_probe)
     layout = @layout [[a            _
                   b{0.77w,0.75h} c]
@@ -146,8 +154,8 @@ function animate_PS_energy(PS_probe, energy_probe)
         plot!(probeplt, subplot=3, xlim=(0, fv_lim))
 
         plot_energy(energy_probe, i, probeplt, 4)
-        p3 = plot!(energy_probe.ts, E_kin[1]*Escale*cos.(omega_p*energy_probe.ts).^2,
-            label=L"\cos^2(\omega_p t)", ls=:dot,
+        p3 = plot!(energy_probe.ts, E_kin[1]*Escale*cos.(omega_H*energy_probe.ts).^2,
+            label=L"\cos^2(\omega_H t)", ls=:dot,
             xlims=(0, energy_probe.ts[end]),
             subplot=4,
             )
