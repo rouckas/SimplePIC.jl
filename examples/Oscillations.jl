@@ -1,6 +1,7 @@
 using SimplePIC
 using StaticArrays
 using Plots
+using LaTeXStrings
 
 plotdir = "./plots-Oscillations/"
 sampling_period = 5
@@ -18,6 +19,9 @@ dV = 100.
 tmax = 0.07
 ntmax = Int64(ceil(tmax/dt))
 exc = 10
+
+numden = ne/(nx-1)/dV
+omega_p = sqrt(q_e^2 * numden /(epsilon_0*m_e))
 
 # electrons = Particles(ne, -e, m_e)
 electrons = ParticleEnsemble("electrons", m_e, q_e, ne, Particle1d1vE)
@@ -78,39 +82,76 @@ for (key, probe) in probes
     savefig(probeplt, plotdir*"plot_"*string(key)*".png")
 end
 
-# vx = LinRange(-diag.vmax,diag.vmax,diag.nv)
-# vx2 = vx.^2
-
-# E_kin = 0.5*m_e*dropdims(sum(diag.vs./-e.* vx2', dims=2), dims=2)
-# E_pot = 0.5*-e*dropdims(sum((diag.rhos.-pic.rhobg)./-e.*pic.dV.*diag.Us, dims=2), dims=2)
 E_kin = probes[:energy_probe].Ekin
+time = probes[:energy_probe].ts
 E_pot = probes[:energy_probe].Epot
 E_tot = E_kin + E_pot
 Emax = maximum(E_tot)
 Escale = 1e25
-p3 = plot(E_kin*Escale, xlims=(0, ntmax), ylims=(0, Emax*Escale), label="kinetic")
-#    p3 = plot!(E_field*Escale, xlims=(0, ntmax), label="field")
-p3 = plot!(E_pot*Escale, xlims=(0, ntmax), label="potential")
-p3 = plot!(E_tot*Escale, xlims=(0, ntmax), label="total")
 
 vx = LinRange(probes[:nvx_probe].vxrange..., probes[:nvx_probe].nvx)
-# vx2 = vx.^2
 
-# E_kin = 0.5*m_e*dropdims(sum(diag.vs./-e.* vx2', dims=2), dims=2)
-# E_pot = -0.5*e*dropdims(sum((diag.rhos.-pic.rhobg)./-e.*pic.dV.*diag.Us, dims=2), dims=2)
-# E_tot = E_kin + E_pot
-# Emax = maximum(E_tot)
-Escale = 1e25
 nsampl = length(probes[:rho_probe].rhos)
 anim = @animate for t in 1:nsampl
-    p1 = plot((probes[:rho_probe].rhos[t] .- pic.rhobg).*-1e18, fill=true, ylims = (0, 1.5), label="rho(x)")
+    p1 = plot((probes[:rho_probe].rhos[t] .- pic.rhobg).*-1e18,
+     fill=true, ylims = (0, 1.5), label="rho(x)")
     p2 = plot(vx, probes[:nvx_probe].Nvx[t]./q_0, fill=true,
       ylims = (0, maximum(probes[:nvx_probe].Nvx[1])*2/q_0), 
       label="rho(v)")
     p3 = plot(E_kin[1:t]*Escale, xlims=(0, nsampl), ylims=(0, Emax*Escale), label="kinetic")
     p3 = plot!(E_pot[1:t]*Escale, xlims=(0, nsampl), label="potential")
     p3 = plot!(E_tot[1:t]*Escale, xlims=(0, nsampl), label="total")
+    p3 = plot!(E_kin[1]*Escale*cos.(omega_p*time[1:nsampl]).^2,
+     label=L"\cos^2(\omega_p t)", ls=:dot)
+    # the energy oscillates at double plasma frequency,
+    # as it is a square of velocity / displacement
     plot(p1, p2, p3, layout=(3,1))
 end
 
 gif(anim, plotdir*"plot_nxcut_anim.gif", fps = 20)
+
+
+probe = probes[:PSx_probe]
+x = LinRange(probe.xrange..., probe.nx)
+println("animating PSx")
+anim = @animate for i in 1:(length(probe.ts))
+    x = LinRange(probe.xrange..., probe.nx)
+    y = LinRange(probe.vxrange..., probe.nvx)
+    array = probe.PSx[i] #.- probe2.PSx[i]
+    lim = maximum(abs.(array))
+    heatmap(x, y, array', yflip = false,
+            titlefont=font(10), c=:bwr, clim=(-lim, lim),
+            title=@sprintf("PSx t = %.1f s", probe.ts[i]),
+            legend=:topright,
+            )
+end
+gif(anim, plotdir*"plot_PSx_anim.gif", fps = 15)
+
+
+include("PlotPsAnim.jl")
+function animate_PS_energy(PS_probe, energy_probe)
+    layout = @layout [[a            _
+                  b{0.77w,0.75h} c]
+                  d{0.28h}]
+
+    println("animating PSx")
+    nx_lim = maximum(maximum.(sum.(PS_probe.PSx, dims=2)))/dV
+    fv_lim = maximum(maximum.(sum.(PS_probe.PSx, dims=1)))
+
+    @animate for i in 1:(length(probe.ts))
+        probeplt = plot(layout = layout, size = (550, 550))
+        plot_PS_marginal(PS_probe, i, probeplt, 1, 2, 3)
+        plot!(probeplt, subplot=1, ylim=(0, nx_lim))
+        plot!(probeplt, subplot=3, xlim=(0, fv_lim))
+
+        plot_energy(energy_probe, i, probeplt, 4)
+        p3 = plot!(energy_probe.ts, E_kin[1]*Escale*cos.(omega_p*energy_probe.ts).^2,
+            label=L"\cos^2(\omega_p t)", ls=:dot,
+            xlims=(0, energy_probe.ts[end]),
+            subplot=4,
+            )
+
+    end
+end
+anim = animate_PS_energy(probes[:PSx_probe], probes[:energy_probe])
+gif(anim, plotdir*"plot_PS_marginal_anim.gif", fps = 15)
