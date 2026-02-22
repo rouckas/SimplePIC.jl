@@ -1,5 +1,6 @@
 using SimplePIC
 using StaticArrays
+using Printf
 using Plots
 using LaTeXStrings
 
