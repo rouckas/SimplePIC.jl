@@ -21,7 +21,7 @@ export init_time, init_monoenergetic, init_thermal
 export advance, advance!, energy, scatter
 
 export epsilon_0, e
-export PIC, Diagnostic, RhoProbe, EnergyProbe, NxProbe, NvxProbe, EProbe, PSxProbe, UProbe, sample!
+export PIC, RhoProbe, EnergyProbe, NxProbe, NvxProbe, EProbe, PSxProbe, UProbe, sample!
 export sample, poisson_solve, interpolate, advance, init_leapfrog, solve_init, solve_init_fft, particle_bc
 
 export random_maxwell_v, random_maxwell_vcomponent, random_maxwell_vflux
@@ -86,12 +86,6 @@ mutable struct PIC{dim, ParticleType, GeometryType, BCType, vdim}
     #where ParticleType <: AbstractParticle where FieldType <: AbstractField where BCType <: BoundaryCondition
     particles::Vector{ParticleEnsemble{ParticleType}}
     interactions::Vector{Interactions{ParticleEnsemble{ParticleType}}}
-    nx::Int64
-    xmax::Float64
-    dx::Float64
-    x::Vector{Float64}
-    xbins::Vector{Float64}
-    dV::Float64
     geo::GeometryType
     BC::BCType
     rho::Array{Float64, dim}
@@ -105,12 +99,6 @@ function PIC(particles::Vector{ParticleEnsemble{ParticleType}}, interactions::Ve
     geo::AbstractGeometry, BC::BCType, epsilon_0::Float64, vdim::Int64) where ParticleType where BCType <: BoundaryCondition
     PIC{1, ParticleType, Cartesian1D, BCType, vdim}(particles,
         interactions,
-        geo.nx, 
-        geo.xmax, 
-        geo.dx, 
-        LinRange(0, geo.xmax, geo.nx), 
-        [i-0.5 for i in 0:geo.nx]*geo.xmax/(geo.nx-1),
-        geo.dV,
         geo,
         BC,
         zeros(geo.nx),
@@ -239,7 +227,7 @@ end
 function sample(pic::PIC)
     pic.rho .= pic.rhobg
     for p in pic.particles
-        pic.rho .+= sample_linear(p, pic.nx, pic.dx).*(p.q/pic.dV)
+        pic.rho .+= sample_linear(p, pic.geo.nx, pic.geo.dx).*(p.q/pic.geo.dV)
     end
 
     if typeof(pic.BC) <: BCPeriodic1D
@@ -265,20 +253,20 @@ end
 
 function interpolate(pic::PIC)
     for p in pic.particles
-        interpolate_linear(p, pic.dx, pic.E)
+        interpolate_linear(p, pic.geo.dx, pic.E)
     end
 end
 
 function particle_bc(pic::PIC)
     for p in pic.particles
-        particle_bc(p, pic.xmax, pic.BC)
+        particle_bc(p, pic.geo.xmax, pic.BC)
     end
 end    
 
 function advance(pic::PIC, dt::Float64, B=SVector(0., 0., 0.))
     for (p, inter) in zip(pic.particles, pic.interactions)
         advance(p, inter, dt, B)
-        particle_bc(p, pic.xmax, pic.BC)
+        particle_bc(p, pic.geo.xmax, pic.BC)
     end
 end
 
@@ -288,7 +276,7 @@ function init_leapfrog(pic::PIC, dt::Float64)
     interpolate(pic)
     for p in pic.particles
         advance_v(p, -dt/2)
-        particle_bc(p, pic.xmax, pic.BC)
+        particle_bc(p, pic.geo.xmax, pic.BC)
     end
 end
 
